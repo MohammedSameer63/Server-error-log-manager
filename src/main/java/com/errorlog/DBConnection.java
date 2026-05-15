@@ -56,7 +56,9 @@ public class DBConnection {
         }
 
         // Step 4 — rebuild clean URL with sslmode=require
-        String finalUrl = prefix + credentials + "@" + hostAndDb + "?sslmode=require";
+        boolean isInternal = !hostPart.contains(".");
+        String sslParam = isInternal ? "sslmode=disable" : "sslmode=require";
+        String finalUrl = prefix + credentials + "@" + hostAndDb + "?" + sslParam;
         return finalUrl;
     }
 
