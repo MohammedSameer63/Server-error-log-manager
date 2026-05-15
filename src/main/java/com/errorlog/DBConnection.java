@@ -4,69 +4,93 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.Properties;
 
 public class DBConnection {
 
-    private static final String DB_URL = System.getenv("DATABASE_URL");
+    // NOT static final — read fresh every time so Docker env vars are picked up
     private static Connection connection = null;
 
     public static Connection getConnection() throws SQLException {
-        if (DB_URL == null || DB_URL.isEmpty()) {
+
+        // Read every time — never cache at class load
+        String rawUrl = System.getenv("DATABASE_URL");
+
+        System.out.println("DATABASE_URL set: " + (rawUrl != null && !rawUrl.isEmpty()));
+
+        if (rawUrl == null || rawUrl.isEmpty()) {
             throw new SQLException("DATABASE_URL environment variable is not set.");
         }
 
         if (connection == null || connection.isClosed()) {
-            String jdbcUrl = buildJdbcUrl(DB_URL);
-            System.out.println("Attempting connection to: " + jdbcUrl);
-            try {
-                connection = DriverManager.getConnection(jdbcUrl);
-                System.out.println("Database connected successfully.");
-            } catch (SQLException e) {
-                // Print full error so we can see exactly what's failing
-                System.err.println("Connection FAILED: " + e.getMessage());
-                System.err.println("SQL State: " + e.getSQLState());
-                System.err.println("Error Code: " + e.getErrorCode());
-                throw e;
-            }
+            connection = createConnection(rawUrl);
         }
 
         return connection;
     }
 
-    private static String buildJdbcUrl(String rawUrl) {
-        System.out.println("Raw DATABASE_URL prefix: " + rawUrl.substring(0, Math.min(30, rawUrl.length())));
+    private static Connection createConnection(String rawUrl) throws SQLException {
 
-        // Normalize prefix
-        String url = rawUrl
+        // Strip any existing query params
+        String clean = rawUrl.contains("?")
+            ? rawUrl.substring(0, rawUrl.indexOf("?"))
+            : rawUrl;
+
+        // Normalize scheme to jdbc:postgresql://
+        String jdbc = clean
             .replace("postgresql://", "jdbc:postgresql://")
             .replace("postgres://",   "jdbc:postgresql://");
 
-        // Split query string
-        String base  = url.contains("?") ? url.substring(0, url.indexOf("?")) : url;
+        // Parse: jdbc:postgresql://user:pass@host(:port)/dbname
+        String withoutScheme = jdbc.substring("jdbc:postgresql://".length());
+        int at       = withoutScheme.lastIndexOf("@");
+        String userInfo  = withoutScheme.substring(0, at);          // user:pass
+        String hostAndDb = withoutScheme.substring(at + 1);         // host/dbname  or host:port/dbname
 
-        // Parse components
-        String prefix      = "jdbc:postgresql://";
-        String rest        = base.substring(prefix.length());
-        int atSign         = rest.lastIndexOf("@");
-        String credentials = rest.substring(0, atSign);
-        String hostAndDb   = rest.substring(atSign + 1);
-        String hostPart    = hostAndDb.contains("/")
-                           ? hostAndDb.substring(0, hostAndDb.indexOf("/"))
-                           : hostAndDb;
+        String host = hostAndDb.contains("/")
+            ? hostAndDb.substring(0, hostAndDb.indexOf("/"))
+            : hostAndDb;
+        String dbName = hostAndDb.contains("/")
+            ? hostAndDb.substring(hostAndDb.indexOf("/") + 1)
+            : "";
 
-        // Inject port 5432 if missing
-        if (!hostPart.contains(":")) {
-            hostAndDb = hostPart + ":5432" + hostAndDb.substring(hostPart.length());
+        // Inject default port if missing
+        String hostWithPort = host.contains(":") ? host : host + ":5432";
+
+        // Split user:pass
+        String user = userInfo.contains(":") ? userInfo.substring(0, userInfo.indexOf(":")) : userInfo;
+        String pass = userInfo.contains(":") ? userInfo.substring(userInfo.indexOf(":") + 1) : "";
+
+        // Final JDBC URL
+        String finalUrl = "jdbc:postgresql://" + hostWithPort + "/" + dbName;
+
+        // Use Properties to pass credentials and SSL separately
+        // This avoids any URL encoding issues with special chars in password
+        Properties props = new Properties();
+        props.setProperty("user",     user);
+        props.setProperty("password", pass);
+
+        // Internal Render hosts have no dots in hostname
+        boolean isInternal = !host.replace(":" + (host.contains(":") ? host.split(":")[1] : ""), "").contains(".");
+        props.setProperty("sslmode", isInternal ? "disable" : "require");
+
+        System.out.println("Final JDBC URL : " + finalUrl);
+        System.out.println("User           : " + user);
+        System.out.println("Host           : " + hostWithPort);
+        System.out.println("Database       : " + dbName);
+        System.out.println("SSL mode       : " + props.getProperty("sslmode"));
+
+        try {
+            Connection conn = DriverManager.getConnection(finalUrl, props);
+            System.out.println("✅ Database connected successfully!");
+            return conn;
+        } catch (SQLException e) {
+            System.err.println("❌ Connection FAILED!");
+            System.err.println("   Message   : " + e.getMessage());
+            System.err.println("   SQL State : " + e.getSQLState());
+            System.err.println("   Error Code: " + e.getErrorCode());
+            throw e;
         }
-
-        // Internal Render hostnames have no dots — disable SSL for them
-        boolean isInternal = !hostPart.contains(".");
-        String sslParam    = isInternal ? "sslmode=disable" : "sslmode=require";
-
-        String finalUrl = prefix + credentials + "@" + hostAndDb + "?" + sslParam;
-        System.out.println("Built JDBC URL host part: " + hostPart);
-        System.out.println("SSL mode: " + sslParam);
-        return finalUrl;
     }
 
     public static void initializeTable() {
@@ -79,14 +103,11 @@ public class DBConnection {
 
         try (Statement stmt = getConnection().createStatement()) {
             stmt.execute(sql);
-            System.out.println("Table 'server_logs' ready.");
+            System.out.println("✅ Table 'server_logs' ready.");
         } catch (SQLException e) {
-            // Print full error — don't swallow it silently
-            System.err.println("===========================================");
-            System.err.println("FAILED to initialize table: " + e.getMessage());
-            System.err.println("SQL State : " + e.getSQLState());
-            System.err.println("Error Code: " + e.getErrorCode());
-            System.err.println("===========================================");
+            System.err.println("❌ FAILED to initialize table: " + e.getMessage());
+            System.err.println("   SQL State : " + e.getSQLState());
+            System.err.println("   Error Code: " + e.getErrorCode());
         }
     }
 }
