@@ -17,48 +17,55 @@ public class DBConnection {
 
         if (connection == null || connection.isClosed()) {
             String jdbcUrl = buildJdbcUrl(DB_URL);
-            System.out.println("Connecting with URL: " + jdbcUrl);
-            connection = DriverManager.getConnection(jdbcUrl);
-            System.out.println("Database connected successfully.");
+            System.out.println("Attempting connection to: " + jdbcUrl);
+            try {
+                connection = DriverManager.getConnection(jdbcUrl);
+                System.out.println("Database connected successfully.");
+            } catch (SQLException e) {
+                // Print full error so we can see exactly what's failing
+                System.err.println("Connection FAILED: " + e.getMessage());
+                System.err.println("SQL State: " + e.getSQLState());
+                System.err.println("Error Code: " + e.getErrorCode());
+                throw e;
+            }
         }
 
         return connection;
     }
 
     private static String buildJdbcUrl(String rawUrl) {
-        // Step 1 — normalize prefix to jdbc:postgresql://
+        System.out.println("Raw DATABASE_URL prefix: " + rawUrl.substring(0, Math.min(30, rawUrl.length())));
+
+        // Normalize prefix
         String url = rawUrl
             .replace("postgresql://", "jdbc:postgresql://")
             .replace("postgres://",   "jdbc:postgresql://");
 
-        // Step 2 — split off any existing query string
+        // Split query string
         String base  = url.contains("?") ? url.substring(0, url.indexOf("?")) : url;
-        String query = url.contains("?") ? url.substring(url.indexOf("?") + 1) : "";
 
-        // Step 3 — inject :5432 port if missing
-        // URL format: jdbc:postgresql://user:pass@host/dbname
-        // We need:    jdbc:postgresql://user:pass@host:5432/dbname
-        String prefix = "jdbc:postgresql://";
-        String rest   = base.substring(prefix.length()); // user:pass@host/dbname
+        // Parse components
+        String prefix      = "jdbc:postgresql://";
+        String rest        = base.substring(prefix.length());
+        int atSign         = rest.lastIndexOf("@");
+        String credentials = rest.substring(0, atSign);
+        String hostAndDb   = rest.substring(atSign + 1);
+        String hostPart    = hostAndDb.contains("/")
+                           ? hostAndDb.substring(0, hostAndDb.indexOf("/"))
+                           : hostAndDb;
 
-        int atSign    = rest.lastIndexOf("@");
-        String credentials = rest.substring(0, atSign);       // user:pass
-        String hostAndDb   = rest.substring(atSign + 1);      // host/dbname
-
-        // Check if port already exists (host:port/dbname)
-        String hostPart = hostAndDb.contains("/")
-            ? hostAndDb.substring(0, hostAndDb.indexOf("/"))
-            : hostAndDb;
-
+        // Inject port 5432 if missing
         if (!hostPart.contains(":")) {
-            // No port — inject 5432
             hostAndDb = hostPart + ":5432" + hostAndDb.substring(hostPart.length());
         }
 
-        // Step 4 — rebuild clean URL with sslmode=require
+        // Internal Render hostnames have no dots — disable SSL for them
         boolean isInternal = !hostPart.contains(".");
-        String sslParam = isInternal ? "sslmode=disable" : "sslmode=require";
+        String sslParam    = isInternal ? "sslmode=disable" : "sslmode=require";
+
         String finalUrl = prefix + credentials + "@" + hostAndDb + "?" + sslParam;
+        System.out.println("Built JDBC URL host part: " + hostPart);
+        System.out.println("SSL mode: " + sslParam);
         return finalUrl;
     }
 
@@ -74,7 +81,12 @@ public class DBConnection {
             stmt.execute(sql);
             System.out.println("Table 'server_logs' ready.");
         } catch (SQLException e) {
-            System.err.println("Failed to initialize table: " + e.getMessage());
+            // Print full error — don't swallow it silently
+            System.err.println("===========================================");
+            System.err.println("FAILED to initialize table: " + e.getMessage());
+            System.err.println("SQL State : " + e.getSQLState());
+            System.err.println("Error Code: " + e.getErrorCode());
+            System.err.println("===========================================");
         }
     }
 }
