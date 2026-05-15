@@ -18,7 +18,7 @@ public class DBConnection {
         }
 
         if (connection == null || connection.isClosed()) {
-            String jdbcUrl = DB_URL.replace("postgres://", "jdbc:postgresql://")
+            String jdbcUrl = DB_URL.replace("postgresql://", "jdbc:postgresql://").replace("postgres://", "jdbc:postgresql://")
                                    + "?sslmode=require";
             connection = DriverManager.getConnection(jdbcUrl);
             System.out.println("Database connected successfully.");
