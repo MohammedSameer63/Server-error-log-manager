@@ -123,7 +123,9 @@ public class ErrorLogServlet extends HttpServlet {
           .append("<div class='layout'>")
           .append(buildSidebar(total, critical, error, warning))
           .append(buildContent(list, view, successMsg, errorMsg))
-          .append("</div></body></html>");
+          .append("</div>")
+          .append(buildScript())
+          .append("</body></html>");
         return sb.toString();
     }
 
@@ -185,6 +187,16 @@ public class ErrorLogServlet extends HttpServlet {
             "</style>";
     }
 
+    private String buildScript() {
+        return "<script>" +
+            "function showAddError(){" +
+            "  var el = document.getElementById('addError');" +
+            "  if(el){ el.textContent = 'Add Log is disabled. The button has been detached.'; el.style.display = 'block'; }" +
+            "  alert('Add Log is disabled.');" +
+            "}" +
+            "</script>";
+    }
+
     private String buildHeader() {
         return "<div class='header'>" +
             "<div class='hicon'><svg width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2'>" +
@@ -198,9 +210,10 @@ public class ErrorLogServlet extends HttpServlet {
         sb.append("<div class='sidebar'>")
 
           .append("<div class='ssec'><div class='slabel'>Add Log Entry</div>")
-          .append("<form method='post' action='/logs'>")
+          .append("<form onsubmit='return false;'>")
           .append("<input type='text' name='logEntry' placeholder='CRITICAL: Disk full' autocomplete='off'/>")
-          .append("<button class='btn bp' name='action' value='add'>+ Add Log</button>")
+          .append("<button type='button' class='btn bp' onclick='showAddError()'>+ Add Log</button>")
+          .append("<div id='addError' class='alert aerr' style='display:none;margin-top:8px;font-size:12px;line-height:1.4'></div>")
           .append("</form></div>")
 
           .append("<div class='ssec'><div class='slabel'>Actions</div>")
