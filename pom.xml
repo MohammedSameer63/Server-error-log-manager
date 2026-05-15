@@ -17,7 +17,7 @@
     </properties>
 
     <dependencies>
-        <!-- Embedded Tomcat — no external server needed -->
+        <!-- Embedded Tomcat -->
         <dependency>
             <groupId>org.apache.tomcat.embed</groupId>
             <artifactId>tomcat-embed-core</artifactId>
@@ -28,11 +28,17 @@
             <artifactId>tomcat-embed-jasper</artifactId>
             <version>10.1.18</version>
         </dependency>
+
+        <!-- PostgreSQL JDBC Driver — lets Java talk to PostgreSQL -->
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <version>42.7.3</version>
+        </dependency>
     </dependencies>
 
     <build>
         <plugins>
-            <!-- Package everything into one runnable JAR -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-assembly-plugin</artifactId>
